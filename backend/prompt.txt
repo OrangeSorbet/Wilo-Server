@@ -1,0 +1,113 @@
+convert given image to provided json format to give as output
+CRITICAL: Read before filling anything.
+PROVIDER = the party ISSUING the invoice (has bank details, receives payment).
+RECEIVER = the party BUYING / receiving goods (has delivery address, pays).
+receiver will always be Wilo Mather & Platt Pumps Pvt.Ltd regardless of invoice, check the block of receiver properly, the location could be above or below the recevier. Take the entire block itself.
+
+{
+"provider": {
+"name": "",
+"address": "",
+"city": "",
+"state": "",
+"country": "",
+"pincode": "",
+"contact_no": "",
+"pan_no": "",
+"gstin": "",
+"cin_no": "",
+"tan": "",
+"email": "",
+"bank_name": "",
+"account_no": "",
+"ifsc_code": ""
+},
+"receiver": {
+"name": "",
+"address": "",
+"city": "",
+"state": "",
+"country": "",
+"pincode": "",
+"contact_no": "",
+"pan_no": "",
+"gstin": "",
+"cin_no": "",
+"tan": "",
+"email": ""
+},
+"invoice": {
+"invoice_id": "",
+"date_of_invoice": "",
+"place_of_supply": "",
+"vendor_code": "",
+"due_date": "",
+"order_number": "",
+"transporter": ""
+},
+"products": [
+{
+"item_no": "",
+"item_code": "",
+"description": "",
+"hsn_sac": "",
+"qty": "",
+"rate": "",
+"total_base_value": "",
+"cgst_rate": "",
+"cgst_value": "",
+"sgst_rate": "",
+"sgst_value": "",
+"total_gst": "",
+"total_amount": ""
+},
+{
+"item_no": "",
+"item_code": "",
+"description": "",
+"hsn_sac": "",
+"qty": "",
+"rate": "",
+"total_base_value": "",
+"cgst_rate": "",
+"cgst_value": "",
+"sgst_rate": "",
+"sgst_value": "",
+"total_gst": "",
+"total_amount": ""
+}
+],
+"totals": {
+"overall_cgst_rate": "",
+"overall_cgst": "",
+"overall_sgst_rate": "",
+"overall_sgst": "",
+"overall_total_amount": ""
+}
+}
+Return valid JSON only.
+Do not stop mid-output.
+Ensure response is complete and closed properly.
+If response is too long, Split into multiple parts labeled PART 1, PART 2, etc.
+Identify buyer and seller from document context.
+
+ignore stamps, signatures, handwriting. 
+look carefully for each value. 
+autocheck country and location and add them if missing. 
+company name is always Wilo. 
+Buyer's order no. = order_number.
+Units will be in either per pieces, per number or per kg. let all of these values placed in qty field.
+If only GST rate is given, it means that cgst_rate and sgst_rate are split in 1:1 ratio (example - if IGST rate OR GST rate is 18 it means cgst_rate and sgst_rate are 9 each)
+IGST% and GST% mean the same thing. ISGT rate = GST rate.
+if sgst_rate and cgst_rate are not given for each product, leave that field as blank, it must surely be the rates for overall_total_amount that is overall_cgst_rate and overall_sgst_rate
+item code != hsn_sac, if not present put "".
+item description must include the whole paragraph of description of goods for 1 specific item.
+if cgst_rate and sgst_rate and cgst_value and sgst_value NOT given for each product, keep "". cgst_rate and sgst_rate for each product usually given on column header and is always in %. if overall_cgst and overall_cgst_rate and overall_sgst and overall_sgst_rate given, include them strictly, if they are not given - calculate overall_cgst and overall_sgst by adding values of sgst_value and cgst_value of each product and display them respectively. overall_total_amount must be the sum of - sum of all products' (cgst_value + sgst_value + total_base_value) - OR - sum of all products' total_amount.
+please dont include the word of key in value, no "gstin": "GSTIN XXXXXX".
+contact number if country code is present (verify 12 numbers), add '+' left of country code (+91).
+please include cin_no and ifsc_code if available because they are very important.
+please include all products, even if there are 30 products, include all products strictly.
+do not include unicodes as listed - '\\u20b9'.
+do not include '\\n' newline in product description.
+do not literally give addition formula in totals.
+put exact due date in date format.

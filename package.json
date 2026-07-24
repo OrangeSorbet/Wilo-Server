@@ -1,0 +1,17 @@
+{
+  "name": "wilo-server",
+  "version": "1.0.0",
+  "description": "Central server for Wilo: users/roles/permissions, invoices+products, audit log. Desktop and mobile apps are API clients of this.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "multer": "^2.0.0",
+    "ws": "^8.18.0"
+  }
+}
