@@ -29,7 +29,8 @@ function runPython(scriptName, args) {
         if (jsonStart === -1) throw new Error(`No JSON found in ${scriptName} output`);
         resolve(JSON.parse(output.substring(jsonStart)));
       } catch (err) {
-        console.error(`Raw ${scriptName} output:`, output);
+        const preview = output.length > 500 ? `${output.slice(0, 500)}... [truncated, ${output.length} chars total]` : output;
+        console.error(`Raw ${scriptName} output:`, preview);
         reject(new Error(`Failed to parse ${scriptName} output: ${err.message}`));
       }
     });

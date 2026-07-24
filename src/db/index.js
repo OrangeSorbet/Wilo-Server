@@ -43,3 +43,20 @@ if (ownerRolesWithoutAdmin.length) {
     insertAdminGrant.run(role.id, JSON.stringify(["*"]));
   }
 }
+
+// products table originally shipped with only description/quantity/unit_price
+// (quantity/unit_price were dead columns - insert code read them from
+// nonexistent aiData.quantity/unit_price instead of the real qty/rate keys,
+// so every product row lost qty, rate, hsn_sac, and every tax/total field).
+// Old columns are left in place on existing DBs (unused, harmless) rather
+// than rebuilding the table.
+const productColumns = db.prepare("PRAGMA table_info(products)").all().map(c => c.name);
+const NEW_PRODUCT_COLUMNS = [
+  "item_no", "item_code", "hsn_sac", "qty", "rate", "total_base_value",
+  "cgst_rate", "cgst_value", "sgst_rate", "sgst_value", "total_gst", "total_amount",
+];
+for (const col of NEW_PRODUCT_COLUMNS) {
+  if (!productColumns.includes(col)) {
+    db.exec(`ALTER TABLE products ADD COLUMN ${col} TEXT`);
+  }
+}

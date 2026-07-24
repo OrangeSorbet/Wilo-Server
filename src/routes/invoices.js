@@ -38,16 +38,30 @@ function insertInvoiceFromEngineResult(result, thumbnail) {
     now
   );
 
-  const insertProduct = db.prepare("INSERT INTO products (id, invoice_id, description, quantity, unit_price) VALUES (?, ?, ?, ?, ?)");
-  for (const p of aiData.products ?? []) {
-    insertProduct.run(crypto.randomUUID(), id, p.description ?? null, p.quantity ?? null, p.unit_price ?? null);
-  }
+  for (const p of aiData.products ?? []) insertProduct(id, p);
 
   return rowToInvoice(db.prepare("SELECT * FROM invoices WHERE id = ?").get(id));
 }
 
+const PRODUCT_FIELDS = [
+  "item_no", "item_code", "description", "hsn_sac", "qty", "rate",
+  "total_base_value", "cgst_rate", "cgst_value", "sgst_rate", "sgst_value",
+  "total_gst", "total_amount",
+];
+
+const insertProductStmt = db.prepare(
+  `INSERT INTO products (id, invoice_id, ${PRODUCT_FIELDS.join(", ")})
+   VALUES (?, ?, ${PRODUCT_FIELDS.map(() => "?").join(", ")})`
+);
+
+function insertProduct(invoiceId, p) {
+  insertProductStmt.run(crypto.randomUUID(), invoiceId, ...PRODUCT_FIELDS.map(f => p[f] ?? null));
+}
+
 function rowToInvoice(row) {
-  const products = db.prepare("SELECT description, quantity, unit_price FROM products WHERE invoice_id = ?").all(row.id);
+  const products = db.prepare(
+    `SELECT ${PRODUCT_FIELDS.join(", ")} FROM products WHERE invoice_id = ?`
+  ).all(row.id);
   return {
     id: row.id,
     provider: row.provider_json ? JSON.parse(row.provider_json) : {},
@@ -104,8 +118,7 @@ router.post("/", (req, res) => {
     now
   );
 
-  const insertProduct = db.prepare("INSERT INTO products (id, invoice_id, description, quantity, unit_price) VALUES (?, ?, ?, ?, ?)");
-  for (const p of products) insertProduct.run(crypto.randomUUID(), id, p.description ?? null, p.quantity ?? null, p.unit_price ?? null);
+  for (const p of products) insertProduct(id, p);
 
   const result = rowToInvoice(db.prepare("SELECT * FROM invoices WHERE id = ?").get(id));
   broadcast("invoice-added", result);
@@ -155,8 +168,7 @@ router.put("/:id", (req, res) => {
 
   if (products && merged.products !== existingInvoice.products) {
     db.prepare("DELETE FROM products WHERE invoice_id = ?").run(row.id);
-    const insertProduct = db.prepare("INSERT INTO products (id, invoice_id, description, quantity, unit_price) VALUES (?, ?, ?, ?, ?)");
-    for (const p of merged.products) insertProduct.run(crypto.randomUUID(), row.id, p.description ?? null, p.quantity ?? null, p.unit_price ?? null);
+    for (const p of merged.products) insertProduct(row.id, p);
   }
 
   const updated = rowToInvoice(db.prepare("SELECT * FROM invoices WHERE id = ?").get(row.id));
@@ -214,51 +226,24 @@ router.post("/upload-invoice", upload.single("invoice"), async (req, res) => {
   }
 });
 
-// csv/json export helpers - xlsx goes through exportengine.py instead
-// (openpyxl styling/chart, not worth reimplementing in Node). Column set
-// mirrors exportengine.py's flatten_invoice so all three formats agree on
-// field names; a field-group-redacted key just comes through blank, same as
-// the Python side's p.get(key, "").
-function flattenForCsv(inv) {
-  const p = inv.provider || {}, r = inv.receiver || {}, i = inv.invoice || {}, t = inv.totals || {};
-  return {
-    provider_name: p.name ?? "", provider_address: p.address ?? "", provider_city: p.city ?? "",
-    provider_state: p.state ?? "", provider_country: p.country ?? "", provider_pincode: p.pincode ?? "",
-    provider_contact_no: p.contact_no ?? "", provider_pan_no: p.pan_no ?? "", provider_gstin: p.gstin ?? "",
-    provider_cin_no: p.cin_no ?? "", provider_tan: p.tan ?? "", provider_email: p.email ?? "",
-    provider_bank_name: p.bank_name ?? "", provider_account_no: p.account_no ?? "", provider_ifsc_code: p.ifsc_code ?? "",
-    receiver_name: r.name ?? "", receiver_address: r.address ?? "", receiver_city: r.city ?? "",
-    receiver_state: r.state ?? "", receiver_country: r.country ?? "", receiver_pincode: r.pincode ?? "",
-    receiver_contact_no: r.contact_no ?? "", receiver_pan_no: r.pan_no ?? "", receiver_gstin: r.gstin ?? "",
-    receiver_cin_no: r.cin_no ?? "", receiver_tan: r.tan ?? "", receiver_email: r.email ?? "",
-    invoice_id: i.invoice_id ?? "", date_of_invoice: i.date_of_invoice ?? "", place_of_supply: i.place_of_supply ?? "",
-    vendor_code: i.vendor_code ?? "", due_date: i.due_date ?? "", order_number: i.order_number ?? "", transporter: i.transporter ?? "",
-    overall_cgst_rate: t.overall_cgst_rate ?? "", overall_cgst: t.overall_cgst ?? "",
-    overall_sgst_rate: t.overall_sgst_rate ?? "", overall_sgst: t.overall_sgst ?? "", overall_total_amount: t.overall_total_amount ?? "",
-  };
-}
-
-function csvEscape(val) {
-  const s = String(val ?? "");
-  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-function toCsv(invoices) {
-  const rows = invoices.map(flattenForCsv);
-  if (!rows.length) return "";
-  const headers = Object.keys(rows[0]);
-  const lines = [headers.join(","), ...rows.map(row => headers.map(h => csvEscape(row[h])).join(","))];
-  return lines.join("\r\n");
-}
-
 function safeFilenamePart(s) {
   return (s || "unknown").replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 
+const EXPORT_CONTENT_TYPES = {
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  csv: "text/csv",
+  json: "application/json",
+};
+
 // Server-side, field-scoped, audited export. invoice.export reuses
 // invoice.read's field grants (confirmed design decision, not a new grant
-// surface) - only rows already SET to QA_APPROVED_QA are exportable; others
-// are silently excluded (not an error) and counted in X-Excluded-Count.
+// surface). All three formats (xlsx/csv/json) go through exportengine.py so
+// they agree on the same flatten_invoice/flatten_products field set instead
+// of Node hand-duplicating a separate (incomplete) flattening for csv.
+// Normally only rows SET to QA_APPROVED_QA are exportable (others silently
+// excluded, counted in X-Excluded-Count) - actors holding "admin" export
+// every non-deleted row regardless of status, no exclusions.
 router.post("/export", async (req, res) => {
   const { invoiceIds, format } = req.body;
   if (!["xlsx", "csv", "json"].includes(format)) {
@@ -273,7 +258,8 @@ router.post("/export", async (req, res) => {
     : db.prepare("SELECT * FROM invoices WHERE deleted_at IS NULL").all();
 
   const candidates = rows.map(rowToInvoice);
-  const eligible = candidates.filter(inv => inv.status === "QA_APPROVED_QA");
+  const isAdmin = req.actor.effective.has("admin");
+  const eligible = isAdmin ? candidates : candidates.filter(inv => inv.status === "QA_APPROVED_QA");
   const excludedCount = candidates.length - eligible.length;
 
   const allowedFieldGroups = effectiveFieldGroups(req.actor, "invoice.read");
@@ -286,28 +272,17 @@ router.post("/export", async (req, res) => {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const filename = `Wilo_Export_${safeFilenamePart(user?.username)}_${safeFilenamePart(role?.name)}_${timestamp}.${format}`;
 
-  res.setHeader("X-Excluded-Count", String(excludedCount));
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-
-  if (format === "json") {
-    res.setHeader("Content-Type", "application/json");
-    return res.send(JSON.stringify({ invoices: filtered }, null, 2));
-  }
-  if (format === "csv") {
-    res.setHeader("Content-Type", "text/csv");
-    return res.send(toCsv(filtered));
-  }
-
-  // xlsx - only format that spawns Python
   const tempPayloadPath = path.join(os.tmpdir(), `wilo-export-payload-${crypto.randomUUID()}.json`);
-  const tempOutputPath = path.join(os.tmpdir(), `wilo-export-output-${crypto.randomUUID()}.xlsx`);
+  const tempOutputPath = path.join(os.tmpdir(), `wilo-export-output-${crypto.randomUUID()}.${format}`);
   try {
     fs.writeFileSync(tempPayloadPath, JSON.stringify({ invoices: filtered }));
     const result = await runExportEngine(tempPayloadPath, tempOutputPath);
     if (result.error) throw new Error(result.error);
 
     const buffer = fs.readFileSync(tempOutputPath);
-    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("X-Excluded-Count", String(excludedCount));
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Type", EXPORT_CONTENT_TYPES[format]);
     res.send(buffer);
   } catch (err) {
     res.status(500).json({ error: err.message });

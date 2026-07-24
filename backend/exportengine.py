@@ -1,14 +1,16 @@
 #exportengine.py
-# xlsx export - only format that needs Python (openpyxl). csv/json are
-# serialized directly in Node (src/routes/invoices.js). Adapted from
-# Wilo-Dashboard-Final/backend/exporterbackup.py (previously fully commented
-# out, client-side, no field-group redaction). Invocation contract mirrors
-# engine.py's runPython pattern (src/engine.js): argv = [payload_path,
-# output_path], prints a single JSON object to stdout.
+# All three export formats (xlsx/csv/json) go through here now, so every
+# format agrees on the same flatten_invoice/flatten_products field set
+# instead of Node hand-duplicating a separate (and incomplete - no product
+# rows at all) flattening for csv. Format is inferred from output_path's
+# extension. Invocation contract mirrors engine.py's runPython pattern
+# (src/engine.js): argv = [payload_path, output_path], prints a single JSON
+# object to stdout.
 
 import sys
 import json
 import os
+import csv
 import hashlib
 from collections import defaultdict
 
@@ -222,8 +224,23 @@ def add_count_per_day_chart(wb, invoice_rows):
 def export(payload, output_path):
     # payload: { invoices: [...already field-filtered invoice objects...] }
     invoices = payload.get("invoices", [])
+    ext = os.path.splitext(output_path)[1].lower()
+
+    if ext == ".json":
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump({"invoices": invoices}, f, indent=2)
+        return output_path
 
     invoice_rows = [flatten_invoice(inv) for inv in invoices]
+
+    if ext == ".csv":
+        headers = list(invoice_rows[0].keys()) if invoice_rows else list(flatten_invoice({}).keys())
+        with open(output_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=headers)
+            writer.writeheader()
+            writer.writerows(invoice_rows)
+        return output_path
+
     product_rows = [p for inv in invoices for p in flatten_products(inv)]
 
     wb = openpyxl.Workbook()

@@ -56,12 +56,25 @@ CREATE TABLE IF NOT EXISTS invoices (
   deleted_at TEXT
 );
 
+-- Column set mirrors backend/prompt.txt's products[] schema exactly (same
+-- keys the frontend reads via extracted.invoices[0].products[]) - see
+-- fieldGroups.js's header comment for why this must stay in sync.
 CREATE TABLE IF NOT EXISTS products (
   id TEXT PRIMARY KEY,
   invoice_id TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  item_no TEXT,
+  item_code TEXT,
   description TEXT,
-  quantity TEXT,
-  unit_price TEXT
+  hsn_sac TEXT,
+  qty TEXT,
+  rate TEXT,
+  total_base_value TEXT,
+  cgst_rate TEXT,
+  cgst_value TEXT,
+  sgst_rate TEXT,
+  sgst_value TEXT,
+  total_gst TEXT,
+  total_amount TEXT
 );
 
 -- Append-only (app-level: no route ever issues UPDATE/DELETE against this
