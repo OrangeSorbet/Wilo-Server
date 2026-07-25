@@ -16,10 +16,17 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BACKEND_DIR = path.join(__dirname, "..", "backend");
 
+// Bare "python" resolves whatever's first on this machine's PATH, which is
+// only guaranteed to have ollama/pillow/pymupdf/openpyxl installed if
+// backend/requirements.txt was pip-installed into that exact interpreter.
+// Set WILO_PYTHON_PATH (e.g. to backend/venv/Scripts/python.exe) once the
+// server runs on its own machine instead of relying on ambient PATH state.
+const PYTHON_BIN = process.env.WILO_PYTHON_PATH || "python";
+
 function runPython(scriptName, args) {
   return new Promise((resolve, reject) => {
     const scriptPath = path.join(BACKEND_DIR, scriptName);
-    const py = spawn("python", [scriptPath, ...args]);
+    const py = spawn(PYTHON_BIN, [scriptPath, ...args]);
     let output = "";
     py.stdout.on("data", (data) => { output += data.toString(); });
     py.stderr.on("data", (data) => console.log(`[${scriptName}]`, data.toString().trim()));

@@ -257,10 +257,11 @@ router.post("/export", async (req, res) => {
     ? invoiceIds.map(id => db.prepare("SELECT * FROM invoices WHERE id = ? AND deleted_at IS NULL").get(id)).filter(Boolean)
     : db.prepare("SELECT * FROM invoices WHERE deleted_at IS NULL").all();
 
+  // Status-gated export removed: any actor with invoice.export exports every
+  // matched non-deleted row regardless of status - no exclusions.
   const candidates = rows.map(rowToInvoice);
-  const isAdmin = req.actor.effective.has("admin");
-  const eligible = isAdmin ? candidates : candidates.filter(inv => inv.status === "QA_APPROVED_QA");
-  const excludedCount = candidates.length - eligible.length;
+  const eligible = candidates;
+  const excludedCount = 0;
 
   const allowedFieldGroups = effectiveFieldGroups(req.actor, "invoice.read");
   const filtered = eligible.map(inv => filterInvoiceFields(inv, allowedFieldGroups));
